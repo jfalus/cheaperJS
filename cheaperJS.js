@@ -20,7 +20,7 @@ function parse() {
     parser.add_argument('--depth', { help: 'total number of stack frames to use (from top)', default: 5 });
     const args = parser.parse_args();
     if (args.progname === undefined)
-        return -1
+        return -1;
     return runIt(args.jsonfile, args.progname, args.depth, args.threshold_mallocs, args.threshold_score);
 }
 
@@ -31,7 +31,7 @@ function hash(input) {
 
 function runIt(jsonfile, progname, depth, threshold_mallocs, threshold_score) {
     if (!fs.existsSync(jsonfile))
-        return -2
+        return -2;
     fs.readFile(jsonfile, async (err, data) => {
         const trace = JSON.parse(data).trace;
         let analyzed = await process_trace(trace, progname, depth, threshold_mallocs, threshold_score);
@@ -56,21 +56,21 @@ function runIt(jsonfile, progname, depth, threshold_mallocs, threshold_score) {
                         dedup[key].region_score = 0;
                     }
                 } else {
-                    dedup[key] = item
+                    dedup[key] = item;
                 }
             }
         })
         analyzed = Object.values(dedup);
         //Sort in reverse order by region score * number of allocations
-        analyzed = analyzed.sort((a, b) => (b.region_score * b.allocs) - (a.region_score * a.allocs))
+        analyzed = analyzed.sort((a, b) => (b.region_score * b.allocs) - (a.region_score * a.allocs));
         analyzed.forEach(item => {
             item.stack.forEach(stk => console.log(stk));
-            console.log("-----")
-            console.log("region score = ", item.region_score)
-            console.log("number of allocs = ", item.allocs)
-            console.log("sizes = ", item.sizes)
-            console.log("threads = ", item.threads)
-            console.log("=====")
+            console.log("-----");
+            console.log("region score = ", item.region_score);
+            console.log("number of allocs = ", item.allocs);
+            console.log("sizes = ", item.sizes);
+            console.log("threads = ", item.threads);
+            console.log("=====");
         })
     });
 }
@@ -83,7 +83,8 @@ async function process_trace(trace, progname, depth, threshold_mallocs, threshol
         i.stack.slice(-depth).forEach(async stkaddr => {
             if (!(stkaddr in stack_info)) {
                 stack_info[stkaddr] = new Promise((resolve, reject) => {
-                    exec("addr2line 0x" + stkaddr.toString(16) + " -C -e " + progname, (error, stdout, stderr) => {
+                    exec("addr2line 0x" + stkaddr.toString(16) + " -C -e " + progname, 
+                    (error, stdout, stderr) => {
                         const temp = {};
                         temp[stkaddr] = stdout.replace(/^\s+|\s+$/gm, '');
                         resolve(temp);
@@ -144,7 +145,7 @@ function analyze(allocs, stackstr, progname, depth, threshold_mallocs, threshold
             actual_footprint += i.size;
             if (actual_footprint > peak_footprint) {
                 peak_footprint = actual_footprint;
-                peak_footprint_index = index
+                peak_footprint_index = index;
             }
             // Compute total 'no-free' memory footprint (excluding frees) This
             // is how much memory would be consumed if we didn't free anything
@@ -168,7 +169,7 @@ function analyze(allocs, stackstr, progname, depth, threshold_mallocs, threshold
     // Recompute utilization
     // frag = Cheaper.utilization(allocs, peak_footprint_index)
     // Compute entropy of sizes
-    const total = allocs.length
+    const total = allocs.length;
     const normalized_entropy = -Object.keys(size_histogram).reduce((a, e) =>
         (e / total * Math.log2(e / total)) + a
     ) / size_histogram.length;
@@ -187,7 +188,7 @@ function analyze(allocs, stackstr, progname, depth, threshold_mallocs, threshold
             "size_entropy": normalized_entropy,
             "peak_footprint": peak_footprint,
             "nofree_footprint": nofree_footprint,
-        }
+        };
         analyzed_list.push(output);
     }
     return analyzed_list;
