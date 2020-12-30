@@ -1,1 +1,3 @@
 # cheaperJS
+
+Although I wasn't able to run the cheaper.py file correctly on my computer, I attempted to mimic its functionality in the js file here. It uses the same logic to parse the `cheaper.out` file as the `cheaper.py` file (which I verified by putting a lot of print statements in the `cheaper.py` file and making sure at each point my js code had the same values in its variables). This can be run by using the commands `npm install` and then ```node test.js --progname (Path to program Ex:swaptions) --jsonfile (Path to JSON file with trace Ex: cheaper.out)``` I want to work tomarrow to see if I can get the original `cheaper.py` to work, but for now this represents my progress.
