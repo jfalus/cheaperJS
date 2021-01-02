@@ -1,7 +1,12 @@
 'use strict';
-const { ArgumentParser, RawTextHelpFormatter } = require('argparse');
+const {
+    ArgumentParser,
+    RawTextHelpFormatter
+} = require('argparse');
 const fs = require('fs');
-const { execSync } = require("child_process");
+const {
+    execSync
+} = require("child_process");
 
 parse()
 
@@ -12,12 +17,30 @@ function parse() {
         formatter_class: RawTextHelpFormatter,
     });
 
-    parser.add_argument('--progname', { help: 'path to executable', required: true });
-    parser.add_argument('--jsonfile', { help: 'json to read', required: true });
-    parser.add_argument('--threshold-mallocs', { help: 'threshold allocations to report', default: 100 });
-    parser.add_argument('--threshold-score', { help: 'threshold reporting score', default: 0.8 });
-    parser.add_argument('--skip', { help: 'number of stack frames to skip', default: 0 });
-    parser.add_argument('--depth', { help: 'total number of stack frames to use (from top)', default: 5 });
+    parser.add_argument('--progname', {
+        help: 'path to executable',
+        required: true
+    });
+    parser.add_argument('--jsonfile', {
+        help: 'json to read',
+        required: true
+    });
+    parser.add_argument('--threshold-mallocs', {
+        help: 'threshold allocations to report',
+        default: 100
+    });
+    parser.add_argument('--threshold-score', {
+        help: 'threshold reporting score',
+        default: 0.8
+    });
+    parser.add_argument('--skip', {
+        help: 'number of stack frames to skip',
+        default: 0
+    });
+    parser.add_argument('--depth', {
+        help: 'total number of stack frames to use (from top)',
+        default: 5
+    });
     const args = parser.parse_args();
     if (args.progname === undefined)
         return -1;
@@ -35,20 +58,26 @@ function runIt(jsonfile, progname, depth, threshold_mallocs, threshold_score) {
     fs.readFile(jsonfile, (err, data) => {
         const trace = JSON.parse(data).trace;
         let analyzed = [];
-        for(let d = 1; d < depth; d++){
-            analyzed.push(process_trace(trace, progname, d, threshold_mallocs, threshold_score));
+        for (let d = 1; d < depth; d++) {
+            analyzed = analyzed.concat(process_trace(trace, progname, d, threshold_mallocs, threshold_score));
         }
         //Sort in reverse order by region score * number of allocations
-        analyzed = analyzed.sort((a, b) => (b.region_score * b.allocs) - (a.region_score * a.allocs));
-        analyzed.forEach(item => {
-            item.stack.forEach(stk => console.log(stk));
-            console.log("-----");
-            console.log("region score = ", item.region_score);
-            console.log("number of allocs = ", item.allocs);
-            console.log("sizes = ", item.sizes);
-            console.log("threads = ", item.threads);
-            console.log("=====");
-        })
+        analyzed = analyzed.sort((a, b) => {
+	    return (b[0].region_score * b[0].allocs * b[0].stack.length) - (a[0].region_score * a[0].allocs * a[0].stack.length)
+	});
+        analyzed.forEach(l => {
+            l.forEach(item => {
+                if (item.stack) {
+                    item.stack.forEach(stk => console.log(stk));
+                    console.log("-----");
+                    console.log("region score = ", item.region_score);
+                    console.log("number of allocs = ", item.allocs);
+                    console.log("sizes = ", item.sizes);
+                    console.log("threads = ", item.threads);
+                    console.log("=====");
+                }
+            });
+        });
     });
 }
 
@@ -67,26 +96,27 @@ function process_trace(trace, progname, depth, threshold_mallocs, threshold_scor
     // Separate each trace by its complete stack signature.
     trace.forEach(i => {
         const stk = i.stack.slice(-depth).map(k => stack_info[k]).filter(s => s != 'BAD');
+        const stkstr = "['" + stk.join("', '") + "']";
         if (stk.length) {
-            const stkstr = "['" + stk.join("', '") + "']";
             if (!Array.isArray(stack_series[stkstr])) stack_series[stkstr] = [];
             stack_series[stkstr].push(i);
         }
     })
     // Iterate through each call site.
     const analyzed = [];
-    Object.keys(stack_series).forEach(k=>
-        analyzed.push(analyze(stack_series[k],k,progname,depth,threshold_mallocs,threshold_score))
+    Object.keys(stack_series).forEach(k =>
+        analyzed.push(analyze(stack_series[k], k, progname, depth, threshold_mallocs, threshold_score))
     );
-    return analyzed.filter(list=>list.length);
+    return analyzed.filter(list => list.length);
 }
 
 function analyze(allocs, stackstr, progname, depth, threshold_mallocs, threshold_score) {
     //Analyze a trace of allocations and frees.
     const analyzed_list = [];
-    if (allocs.length < parseInt(threshold_mallocs))
+    if (allocs.length < parseInt(threshold_mallocs)) {
         //Ignore call sites with too few mallocs
         return analyzed_list;
+    }
     //The set of sizes of allocated objects.
     const sizes = new Set();
     //A histogram of the # of objects allocated of each size.
