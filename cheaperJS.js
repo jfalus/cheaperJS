@@ -1,7 +1,7 @@
 'use strict';
 const { ArgumentParser, RawTextHelpFormatter } = require('argparse');
 const fs = require('fs');
-const { exec } = require("child_process");
+const { execSync } = require("child_process");
 
 parse()
 
@@ -32,35 +32,12 @@ function hash(input) {
 function runIt(jsonfile, progname, depth, threshold_mallocs, threshold_score) {
     if (!fs.existsSync(jsonfile))
         return -2;
-    fs.readFile(jsonfile, async (err, data) => {
+    fs.readFile(jsonfile, (err, data) => {
         const trace = JSON.parse(data).trace;
-        let analyzed = await process_trace(trace, progname, depth, threshold_mallocs, threshold_score);
-        // Remove duplicates
-        const dedup = {};
-        analyzed.forEach(item => {
-            if ("stack" in item) {
-                const key = hash(JSON.stringify(item.stack));
-                if (key in dedup) {
-                    //Merge duplicate stacks
-                    Array.prototype.push.apply(dedup[key].allocs, item.allocs);
-                    item.sizes.forEach(size => dedup[key].sizes.add(size));
-                    item.threads.forEach(thread => dedup[key].threads.add(thread));
-                    // Recomputing region score = tricky...
-                    // For now, use weighted average
-                    if (dedup[key].allocs + item.allocs > 0) {
-                        dedup[key].region_score = (
-                            dedup[key].allocs * dedup[key].region_score
-                            + item.allocs * item.allocs
-                        ) / (dedup[key].allocs + item.allocs);
-                    } else {
-                        dedup[key].region_score = 0;
-                    }
-                } else {
-                    dedup[key] = item;
-                }
-            }
-        })
-        analyzed = Object.values(dedup);
+        let analyzed = [];
+        for(let d = 1; d < depth; d++){
+            analyzed.push(process_trace(trace, progname, d, threshold_mallocs, threshold_score));
+        }
         //Sort in reverse order by region score * number of allocations
         analyzed = analyzed.sort((a, b) => (b.region_score * b.allocs) - (a.region_score * a.allocs));
         analyzed.forEach(item => {
@@ -75,44 +52,33 @@ function runIt(jsonfile, progname, depth, threshold_mallocs, threshold_score) {
     });
 }
 
-async function process_trace(trace, progname, depth, threshold_mallocs, threshold_score) {
+function process_trace(trace, progname, depth, threshold_mallocs, threshold_score) {
     let stack_series = {};
     const stack_info = {};
     // Convert each stack frame into a name and line number
-    trace.forEach(async i => {
-        i.stack.slice(-depth).forEach(async stkaddr => {
+    trace.forEach(i => {
+        i.stack.slice(-depth).forEach(stkaddr => {
             if (!(stkaddr in stack_info)) {
-                stack_info[stkaddr] = new Promise((resolve, reject) => {
-                    exec("addr2line 0x" + stkaddr.toString(16) + " -C -e " + progname, 
-                    (error, stdout, stderr) => {
-                        const temp = {};
-                        temp[stkaddr] = stdout.replace(/^\s+|\s+$/gm, '');
-                        resolve(temp);
-                    })
-                });
+                const out = execSync("addr2line 0x" + stkaddr.toString(16) + " -C -e " + progname).toString('utf8');
+                stack_info[stkaddr] = out.includes('??') ? 'BAD' : out.replace(/^\s+|\s+$/gm, '');
             }
         })
     })
-    return Promise.all(Object.values(stack_info))
-        .then(x => {
-            const new_stack_info = x.reduce((a, e) => Object.assign(a, e), {});
-            // Separate each trace by its complete stack signature.
-            trace.forEach(i => {
-                const stk = i.stack.slice(-depth).map(k => new_stack_info[k]); //[skip:depth+skip]]
-                const stkstr = "['" + stk.join("', '") + "']";
-                if (!Array.isArray(stack_series[stkstr])) stack_series[stkstr] = [];
-                stack_series[stkstr].push(i);
-            })
-            // Iterate through each call site.
-            const analyzed = [];
-            for (let d = 0; d < depth; d++) {
-                Object.keys(stack_series).forEach(k => {
-                    analyzed.push(analyze(stack_series[k], k, progname, d, threshold_mallocs, threshold_score));
-                })
-            }
-            return analyzed;
-        })
-
+    // Separate each trace by its complete stack signature.
+    trace.forEach(i => {
+        const stk = i.stack.slice(-depth).map(k => stack_info[k]).filter(s => s != 'BAD');
+        if (stk.length) {
+            const stkstr = "['" + stk.join("', '") + "']";
+            if (!Array.isArray(stack_series[stkstr])) stack_series[stkstr] = [];
+            stack_series[stkstr].push(i);
+        }
+    })
+    // Iterate through each call site.
+    const analyzed = [];
+    Object.keys(stack_series).forEach(k=>
+        analyzed.push(analyze(stack_series[k],k,progname,depth,threshold_mallocs,threshold_score))
+    );
+    return analyzed.filter(list=>list.length);
 }
 
 function analyze(allocs, stackstr, progname, depth, threshold_mallocs, threshold_score) {
